@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   postgres:
-    image: postgres:16
+    image: postgres:15
     container_name: postgres_pib
     environment:
       POSTGRES_DB: pib
@@ -15,33 +13,55 @@ services:
     networks:
       - pib_net
 
+  spark-master:
+    image: apache/spark:3.5.1
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8081:8080"     # Spark Master UI
+      - "7077:7077"     # Spark Master RPC
+    volumes:
+      - ./data:/opt/spark/data
+      - ./spark/jobs:/opt/spark/jobs
+    networks:
+      - pib_net
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    volumes:
+      - ./data:/opt/spark/data
+      - ./spark/jobs:/opt/spark/jobs
+    networks:
+      - pib_net
+
   airflow:
     image: apache/airflow:2.8.0
     container_name: airflow
     depends_on:
       - postgres
+      - spark-master
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/pib
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./etl:/opt/airflow/etl
+      - ./spark/jobs:/opt/airflow/spark/jobs
       - ./data:/opt/airflow/data
+      - ./requirements.txt:/requirements.txt
     ports:
       - "8080:8080"
     command: >
       bash -c "
-      airflow db init &&
-      airflow users create
-        --username admin
-        --password admin
-        --firstname Admin
-        --lastname User
-        --role Admin
-        --email admin@example.com &&
-      airflow scheduler &
-      airflow webserver
+      pip install --no-cache-dir -r /requirements.txt &&
+      airflow standalone
       "
     networks:
       - pib_net
