@@ -1,52 +1,118 @@
-# Importações necessárias para fazer a transformação dos dados do silver para o gold
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, sum as spark_sum
+# IMPORTAÇÕES NECESSÁRIAS
+from pyspark.sql import SparkSession, Window
+from pyspark.sql.functions import col, sum as spark_sum, desc, row_number, lag
 from delta import configure_spark_with_delta_pip
 
-# Criar uma sessão do Spark
-builder = (
-    SparkSession.builder
-    .appName("SilverToGold")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config(
-        "spark.sql.catalog.spark_catalog",
-        "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+
+class SilverToGoldJob:
+    def __init__(self, silver_path: str, gold_base_path: str):
+        self.silver_path = silver_path
+        self.gold_base_path = gold_base_path
+        self.spark = self._create_spark_session()
+
+    # 1. CRIAR A SPARK SESSION COM SUPORTE A DELTA
+    def _create_spark_session(self):
+        builder = (
+            SparkSession.builder
+            .appName("SilverToGold")
+            .config(
+                "spark.sql.extensions",
+                "io.delta.sql.DeltaSparkSessionExtension"
+            )
+            .config(
+                "spark.sql.catalog.spark_catalog",
+                "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+            )
+        )
+
+        return configure_spark_with_delta_pip(builder).getOrCreate()
+
+    # 2. FUNÇÕES DE REFINAMENTO (MÉTRICAS GOLD)
+    # 2.1 PIB total do Brasil por ano
+    def gerar_pib_total_por_ano(self, df):
+        return (
+            df.groupBy("ano")
+                .agg(spark_sum("pib").alias("pib_total_brasil"))
+                .orderBy("ano")
+        )
+
+    # 2.2 PIB por município e ano (base para outras métricas)
+    def gerar_pib_por_municipio(self, df):
+        return (
+            df.groupBy("municipio", "ano")
+                .agg(spark_sum("pib").alias("pib_municipio"))
+        )
+
+    # 2.3 Top N municípios por PIB em cada ano
+    def gerar_top_municipios(self, df, top_n=10):
+        window = Window.partitionBy("ano").orderBy(desc("pib_municipio"))
+
+        return (
+            df.withColumn("rank", row_number().over(window))
+                .filter(col("rank") <= top_n)
+        )
+
+    # 2.4 Crescimento percentual do PIB por município
+    def gerar_crescimento(self, df):
+        window = Window.partitionBy("municipio").orderBy("ano")
+
+        return (
+            df.withColumn(
+                "pib_ano_anterior",
+                lag("pib_municipio").over(window)
+            )
+            .withColumn(
+                "crescimento_percentual",
+                (
+                    (col("pib_municipio") - col("pib_ano_anterior"))
+                    / col("pib_ano_anterior")
+                ) * 100
+            )
+            .filter(col("pib_ano_anterior") >= 0)
+        )
+
+    # 3. EXECUÇÃO DO PIPELINE SILVER → GOLD
+    def run(self):
+
+        # 3.1 Ler os dados da camada Silver (Parquet)
+        silver_df = self.spark.read.parquet(self.silver_path)
+
+        # 3.2 Gerar as métricas Gold
+        pib_por_municipio = self.gerar_pib_por_municipio(silver_df)
+        pib_total_ano = self.gerar_pib_total_por_ano(silver_df)
+        top_municipios = self.gerar_top_municipios(pib_por_municipio)
+        crescimento = self.gerar_crescimento(pib_por_municipio)
+
+        # 4. ESCRITA DA CAMADA GOLD (DELTA LAKE)
+        # 4.1 PIB por município e ano
+        pib_por_municipio.write.format("delta").mode("overwrite").save(
+            f"{self.gold_base_path}/pib_por_municipio"
+        )
+
+        # 4.2 PIB total do Brasil por ano
+        pib_total_ano.write.format("delta").mode("overwrite").save(
+            f"{self.gold_base_path}/pib_total_por_ano"
+        )
+
+        # 4.3 Top municípios por PIB em cada ano
+        top_municipios.write.format("delta").mode("overwrite").save(
+            f"{self.gold_base_path}/top_municipios_por_ano"
+        )
+
+        # 4.4 Crescimento percentual do PIB por município
+        crescimento.write.format("delta").mode("overwrite").save(
+            f"{self.gold_base_path}/crescimento_pib"
+        )
+
+        # 5. Encerrar a SparkSession
+        self.spark.stop()
+
+
+# 6. PONTO DE ENTRADA DO SCRIPT
+if __name__ == "__main__":
+    job = SilverToGoldJob(
+        silver_path="data/silver-layer/pib_municipios.parquet",
+        gold_base_path="data/gold-layer"
     )
-)
 
-spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-# 1. Procurar pelo nosso .parquet do silver e ler usando ele o spark.read.parquet() para criar um dataframe do silver
-silver_df = spark.read.parquet(
-    "data/silver-layer/valor_agro_municipios.parquet"
-)
-
-# 2. Fazer as transformações necessárias para agregar os dados por ano e calcular o PIB total do Brasil para cada ano
-# Printar o schema do silver_df para entender a estrutura dos dados
-silver_df.printSchema()
-
-gold_df = (
-    silver_df
-    .groupBy("ano")
-    .agg(spark_sum("valor_agro").alias("valor_agro_brasil"))
-    .orderBy(col("ano"))
-)
-
-# 3. Escrever o dataframe do gold, transformando ele em um delta file usando o spark.write.format("delta").save() para salvar
-
-gold_df = (
-    silver_df
-    .groupBy("ano")
-    .agg(spark_sum("valor_agro").alias("valor_agro_brasil"))
-    .orderBy(col("ano"))
-)
-
-# 4. Subir o delta file para o postgres usando o spark.write.format("jdbc").options() para configurar a conexão com o banco de dados e salvar os dados na tabela do postgres
-
-# 5. Ler o delta file do gold usando o spark.read.format("delta").load() para verificar se os dados foram salvos corretamente
-gold_df.write.format("delta").mode("overwrite").save(
-    "data/gold-layer/valor_agro_brasil"
-)
-
-# 6. Parar a sessão do Spark
-spark.stop()
+    job.run()
