@@ -1,0 +1,23 @@
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    networks:
+      - pib_net
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_pib
+    environment:
+      POSTGRES_DB: pib
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - pib_net
