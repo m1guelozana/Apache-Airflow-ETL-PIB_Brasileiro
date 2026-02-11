@@ -7,7 +7,7 @@ Pipeline de dados construído com **Spark + Airflow + Delta Lake + Metabase**, s
 # 🏗️ Arquitetura do Projeto
 
 ## 📐 Desenho da Arquitetura
-![Arquitetura do Projeto](https://imgur.com/undefined)
+![Arquitetura do Projeto](https://imgur.com/w3qpkUB)
 
 ---
 
