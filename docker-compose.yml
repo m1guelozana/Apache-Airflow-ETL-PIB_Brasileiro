@@ -4,10 +4,13 @@ services:
     container_name: spark-master
     command: >
       bash -c "/opt/spark/sbin/start-master.sh &&
-               tail -f /opt/spark/logs/*"
+            tail -f /opt/spark/logs/*"
     ports:
       - "7077:7077"
       - "8081:8080"
+    volumes:
+      - ./data:/opt/spark/data  # Monta o diretório de dados para persistência
+      - ./airflow/jobs:/opt/airflow/jobs  # Monta os scripts de jobs para o Spark acessar
 
   spark-worker:
     image: apache/spark:3.5.1
@@ -17,24 +20,48 @@ services:
     command: >
       bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
               tail -f /opt/spark/logs/*"
+    volumes:
+      - ./data:/opt/airflow/data  # Monta o diretório de dados para persistência
+      - ./airflow/jobs:/opt/airflow/jobs  # Monta os scripts de
 
   airflow:
-    image: apache/airflow:2.8.0
+    build: .  # Isso vai ler o seu Dockerfile unificado
     container_name: airflow
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/jobs:/opt/airflow/jobs
-      - ./requirements.txt:/requirements.txt
+      - ./data:/opt/airflow/data  # Monta o diretório de dados para persistência
     environment:
-      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    command: >
-      bash -c "
-      pip install --no-cache-dir -r /requirements.txt &&
-      airflow standalone
-      "
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+    command: standalone
+
+  postgres-dw:
+      image: postgres:15
+      container_name: postgres-dw
+      environment:
+        - POSTGRES_USER=airflow
+        - POSTGRES_PASSWORD=airflow
+        - POSTGRES_DB=dw_pib
+      ports:
+        - "5433:5432"
+      volumes:
+        - postgres_dw_data:/var/lib/postgresql/data
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3000:3000"
+    restart: always
+    depends_on:
+      - postgres-dw
+
+volumes:
+  postgres_dw_data:
 
 
 

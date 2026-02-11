@@ -23,6 +23,7 @@ class SilverToGoldJob:
                 "spark.sql.catalog.spark_catalog",
                 "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
+            .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.1.0")
         )
 
         return configure_spark_with_delta_pip(builder).getOrCreate()
@@ -111,8 +112,8 @@ class SilverToGoldJob:
 # 6. PONTO DE ENTRADA DO SCRIPT
 if __name__ == "__main__":
     job = SilverToGoldJob(
-        silver_path="data/silver-layer/pib_municipios.parquet",
-        gold_base_path="data/gold-layer"
+        silver_path="/opt/airflow/data/silver-layer/pib_municipios.parquet",
+        gold_base_path="/opt/airflow/data/gold-layer/"
     )
 
     job.run()
