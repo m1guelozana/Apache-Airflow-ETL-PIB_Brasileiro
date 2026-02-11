@@ -10,7 +10,7 @@ Pipeline de dados construído com **Spark + Airflow + Delta Lake + Metabase**, s
 
 > Substitua o link abaixo pelo link da imagem no Imgur
 
-![Arquitetura do Projeto](https://i.imgur.com/SEU_DESENHO_AQUI.png)
+![Arquitetura do Projeto](https://imgur.com/undefined)
 
 ---
 
@@ -37,6 +37,7 @@ O projeto segue o padrão **Medallion Architecture**, dividido em três camadas:
 ---
 
 ## 🔄 Orquestração
+![Arquitetura da Orquestração]((https://imgur.com/O3g1JBz))
 
 A orquestração é feita pelo **Apache Airflow**, que:
 
@@ -45,6 +46,15 @@ A orquestração é feita pelo **Apache Airflow**, que:
 - Controla dependências
 - Permite reprocessamento
 - Mantém histórico de execuções
+
+---
+
+## 📊 Metabase
+![Metabase_um](https://imgur.com/g6yZ3k9)
+![Metabase_um](https://imgur.com/LB976HG)
+![Metabase_um](https://imgur.com/gGD4W4U)
+![Metabase_um](https://imgur.com/gGD4W4U)
+![Metabase_um](https://imgur.com/7USEGAx)
 
 ---
 
