@@ -2,7 +2,6 @@ from pyspark.sql import SparkSession
 
 
 def gold_to_dw():
-    # Adicionamos as extensões do Delta aqui também!
     spark = (
         SparkSession.builder.appName("GoldToDW")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
